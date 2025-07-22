@@ -1,0 +1,8 @@
+[theme]
+base = "light"
+primaryColor = "#0a7ebd"
+font = "sans serif"
+
+[server]
+headless = true
+enableCORS = false
