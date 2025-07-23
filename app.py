@@ -179,7 +179,7 @@ def get_nearby_pws(lat, lon):
             station_lat = data['location']['latitude'][i]
             station_lon = data['location']['longitude'][i]
             dist_miles = geodesic((lat, lon), (station_lat, station_lon)).miles
-            if dist_miles <= 1.0:
+            if dist_miles <= 5.0:
                 stations.append({
                     'stationId': data['location']['stationId'][i],
                     'name': f"Station {i}",
