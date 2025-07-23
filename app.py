@@ -7,13 +7,14 @@ from datetime import date, timedelta
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import streamlit_js_eval
+from streamlit_geolocation import streamlit_geolocation
 
 # --- Page Configuration ---
 st.set_page_config(page_title="Local Rain Gauge", layout="centered", page_icon="☔️")
 st.title("💧 Local Rainfall Tracker")
 
 # --- Geocode from address ---
-geolocator = Nominatim(user_agent="rain_gauge_app")
+geolocator = Nominatim(user_agent="rain_gauge_app_unique")
 def geocode_address(address):
     try:
         location = geolocator.geocode(address, timeout=10)
@@ -22,42 +23,145 @@ def geocode_address(address):
     except Exception as e:
         st.warning(f"Geocoding error: {e}")
     return None
-
-# --- Location Section with Button ---
-st.subheader("📍 Choose Your Location")
-
-user_lat = None
-user_lon = None
-
-# Create button
-use_location = st.button("🌏 Use Current Location")
-
-if use_location:
-    coords = streamlit_js_eval.get_geolocation()
-else:
-    coords = None
-
-# Get coordinates from browser if allowed
-if coords and coords.get("latitude") and coords.get("longitude"):
-    user_lat = coords["latitude"]
-    user_lon = coords["longitude"]
-    st.success(f"Detected location: ({user_lat:.4f}, {user_lon:.4f})")
-
-# If no location, fall back to manual input
-if not user_lat or not user_lon:
-    st.warning("Could not detect location automatically. Please allow access or enter your location manually.")
-    user_input = st.text_input("Enter your city or address:")
-    if user_input:
-        geocoded = geocode_address(user_input)
+    
+def reverse_geocode(lat, lon):
+    try:
+        location = geolocator.reverse((lat, lon), timeout=10)
+        if location and location.raw and "address" in location.raw:
+            addr = location.raw["address"]
+            street = addr.get("house_number", "") + " " + addr.get("road", "")
+            city = addr.get("city", "") or addr.get("town", "") or addr.get("village", "")
+            state = addr.get("state", "")
+            postcode = addr.get("postcode", "")
+            return f"{street.strip()}, {city}, {state} {postcode}".strip(", ")
+        elif location and location.address:
+            return location.address  # fallback
+    except Exception as e:
+        st.warning(f"Reverse geocoding error: {e}")
+    return ""
+    
+def handle_address_submit():
+    address_input = st.session_state["address_input"]
+    if address_input:
+        geocoded = geocode_address(address_input)
         if geocoded:
-            user_lat, user_lon = geocoded
-            st.success(f"Location set to: ({user_lat:.4f}, {user_lon:.4f})")
+            st.session_state["user_lat"], st.session_state["user_lon"] = geocoded
+            st.session_state["location_source"] = "address"
+            st.session_state["last_address"] = address_input
+            st.session_state["last_input_mode"] = "address"
+            st.session_state["clear_address_next_run"] = True  # ✅ Clear on next run
+            st.rerun()
         else:
             st.error("Could not geocode the provided address. Please try a different one.")
             st.stop()
+
+# --- Location Section with Button and Input ---
+#st.subheader("📍 Choose Your Location")
+
+# --- Initialize session state ---
+# --- Initialize session state ---
+# --- Initialization ---
+for key, val in {
+    "user_lat": None,
+    "user_lon": None,
+    "location_source": None,
+    "last_input_mode": None,
+    "last_address": "",
+    "geocode_trigger": "",  # 🔑 trigger for geocoding
+    "gps_address": "",
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
+
+# --- GPS Button ---
+col1, col2 = st.columns([3, 1])
+
+# ----- ADDRESS INPUT -----
+with col1:
+    default_value = st.session_state["gps_address"] if (
+        st.session_state["last_input_mode"] == "gps"
+        and st.session_state["last_address"] != st.session_state["gps_address"]
+    ) else st.session_state["last_address"]
+
+    address_input = st.text_input(
+        label="Enter Address",
+        key="address_input",
+        value=default_value,
+        placeholder="Enter address and press Enter",
+        label_visibility="collapsed",
+    )
+
+    if address_input:
+        # Geocode if:
+        # - Address has changed
+        # - Input mode is switching from GPS to address
+        if (
+            address_input != st.session_state["last_address"]
+            or st.session_state["last_input_mode"] != "address"
+        ):
+            geocoded = geocode_address(address_input)
+            if geocoded:
+                st.session_state["user_lat"], st.session_state["user_lon"] = geocoded
+                st.session_state["location_source"] = "address"
+                st.session_state["last_input_mode"] = "address"
+                st.session_state["last_address"] = address_input
+                st.rerun()
+            else:
+                st.error("Could not geocode the provided address. Please try a different one.")
+                st.stop()
+
+# ----- GPS BUTTON -----
+with col2:
+    gps_coords = streamlit_geolocation()
+    if gps_coords and gps_coords.get("latitude") and gps_coords.get("longitude"):
+        gps_lat = gps_coords["latitude"]
+        gps_lon = gps_coords["longitude"]
+
+        # Reverse geocode GPS location only if needed
+        if (
+            st.session_state["last_input_mode"] != "gps"
+            or gps_lat != st.session_state["user_lat"]
+            or gps_lon != st.session_state["user_lon"]
+        ):
+            gps_address = reverse_geocode(gps_lat, gps_lon)
+            if gps_address:
+                st.session_state["gps_address"] = gps_address
+                st.session_state["user_lat"] = gps_lat
+                st.session_state["user_lon"] = gps_lon
+                st.session_state["location_source"] = "gps"
+                st.session_state["last_input_mode"] = "gps"
+                st.rerun()
+
+# --- Geocoding Execution ---
+trigger = st.session_state.get("geocode_trigger", "")
+if trigger:
+    geocoded = geocode_address(trigger)
+    if geocoded:
+        st.session_state["user_lat"], st.session_state["user_lon"] = geocoded
+        st.session_state["location_source"] = "address"
+        st.session_state["last_input_mode"] = "address"
+        st.session_state["last_address"] = trigger
     else:
-        st.info("Waiting for location input...")
+        st.error("Could not geocode the provided address. Please try a different one.")
         st.stop()
+
+# Final coordinates
+user_lat = st.session_state.get("user_lat")
+user_lon = st.session_state.get("user_lon")
+
+if not user_lat or not user_lon:
+    st.info("Please enter an address or click 'Use My Location' to continue.")
+    st.stop()
+
+# Use updated coordinates
+user_lat = st.session_state["user_lat"]
+user_lon = st.session_state["user_lon"]
+gps_coords = None
+
+# Check for valid coordinates
+if not user_lat or not user_lon:
+    st.info("Please enter an address or click 'Use My Location' to continue.")
+    st.stop()
 
 # --- Number of days slider ---
 num_days = st.slider("Number of past days to show", 1, 30, 7)
