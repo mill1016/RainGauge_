@@ -310,7 +310,7 @@ layer = pdk.Layer(
     data=map_data,
     get_position='[lon, lat]',
     get_color='color',
-    get_radius=25,
+    get_radius=50,
     pickable=True
 )
 
