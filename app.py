@@ -11,7 +11,7 @@ from streamlit_geolocation import streamlit_geolocation
 
 # --- Page Configuration ---
 st.set_page_config(page_title="Local Rain Gauge", layout="centered", page_icon="☔️")
-st.title("💧 Local Rainfall Tracker")
+st.title("⛆ Weekly Rainfall Tracker")
 
 # --- Geocode from address ---
 geolocator = Nominatim(user_agent="rain_gauge_app_unique")
@@ -74,7 +74,7 @@ for key, val in {
         st.session_state[key] = val
 
 # --- GPS Button ---
-col1, col2 = st.columns([3, 1])
+col1, col2 = st.columns([6.5, 1])
 
 # ----- ADDRESS INPUT -----
 with col1:
@@ -163,9 +163,6 @@ if not user_lat or not user_lon:
     st.info("Please enter an address or click 'Use My Location' to continue.")
     st.stop()
 
-# --- Number of days slider ---
-num_days = st.slider("Number of past days to show", 1, 30, 7)
-
 # --- Get Weather Underground PWS stations ---
 def get_nearby_pws(lat, lon):
     API_KEY = "e1f10a1e78da46f5b10a1e78da96f525"
@@ -201,17 +198,13 @@ if stations.empty:
     st.warning("No weather stations found within 1 mile of your location.")
     st.stop()
 
-# --- Precipitation Data ---
-st.subheader("📊 Precipitation Trends")
-end_date = date.today() - timedelta(days=1)
-start_date = end_date - timedelta(days=num_days - 1)
-
 @st.cache_data(show_spinner=False)
 def get_precip_data(stations):
+    #stations = pd.read_json(stations_json)
     BASE_URL = "https://api.weather.com/v2/pws/history/all"
     API_KEY = "e1f10a1e78da46f5b10a1e78da96f525"
     end_date = date.today() - timedelta(days=1)
-    start_date = end_date - timedelta(days=29)
+    start_date = end_date - timedelta(days=29)  # ✅ Always 30 days
     records = []
 
     for day in pd.date_range(start_date, end_date):
@@ -252,35 +245,51 @@ def get_precip_data(stations):
                 continue
         avg_precip = sum(values) / len(values) if values else 0.0
         records.append((day, avg_precip))
-    return pd.DataFrame(records, columns=["Date", "Avg Precip [in]"])
+    df = pd.DataFrame(records, columns=["Date", "Avg Precip [in]"])
+    df = df.set_index("Date").asfreq("D", fill_value=0).reset_index()
+    return df
+    
+# --- Number of days slider ---
+# --- Number of days slider ---
+#num_days = st.slider("Number of past days to show", 1, 30, 7)
+#st.write("⏳ Slider says:", num_days)
+num_days = 7
 
-precip_df_full = get_precip_data(stations)
+### Precip Chart
+st.subheader("Precipitation Trends")
+
+precip_df_full = get_precip_data(stations)  # still fetches 30 days
+#st.write("📅 Full data range:", precip_df_full['Date'].min(), "to", precip_df_full['Date'].max())
+
+# Trim and compute rolling/cumulative
 precip_df = precip_df_full.tail(num_days).copy()
-precip_df['7-Day Cumulative'] = precip_df['Avg Precip [in]'].rolling(7, min_periods=1).sum()
+#st.write("📊 Subset shape:", precip_df.shape)
+#st.write("📊 Subset date range:", precip_df['Date'].min(), "to", precip_df['Date'].max())
 
-# 👇 Add this line to see the latest available date
-st.write("Most recent date in data:", precip_df_full['Date'].max())
+# Cumulative sum
+cum_col = f'{num_days}-Day Cumulative'
+precip_df[cum_col] = precip_df['Avg Precip [in]'].cumsum()
 
-# --- Plot Precip Trends ---
+# Plot
 fig, ax1 = plt.subplots(figsize=(10, 6))
-ax1.bar(precip_df['Date'], precip_df['Avg Precip [in]'], color='skyblue', label='Daily Precipitation')
+ax1.bar(precip_df['Date'], precip_df['Avg Precip [in]'], color='skyblue')
 ax1.set_ylabel('Daily Precipitation [in]', color='black')
-ax1.tick_params(axis='y', labelcolor='black')
 ax1.tick_params(axis='x', rotation=45)
 ax1.set_xticks(precip_df['Date'])
-ax1.set_xticklabels(pd.to_datetime(precip_df['Date']).dt.strftime('%a\n%m-%d'))
+ax1.set_xticklabels(precip_df['Date'].dt.strftime('%m-%d'), rotation=45)
 
 ax2 = ax1.twinx()
-ax2.plot(precip_df['Date'], precip_df['7-Day Cumulative'], color='darkblue', label='7-Day Cumulative')
-ax2.set_ylabel('7-Day Cumulative Total [in]', color='black')
-ax2.tick_params(axis='y', labelcolor='black')
+ax2.plot(precip_df['Date'], precip_df[cum_col], color='darkblue')
+ax2.set_ylabel(f'Cumulative Rainfall over {num_days} Days [in]', color='black')
 
-y_min = 0
-y_max = max(precip_df['Avg Precip [in]'].max(), precip_df['7-Day Cumulative'].max()) * 1.1
-ax1.set_ylim(y_min, y_max)
-ax2.set_ylim(y_min, y_max)
+y_max = max(
+    precip_df['Avg Precip [in]'].max(),
+    precip_df[cum_col].max()
+) * 1.1
+ax1.set_ylim(0, y_max)
+ax2.set_ylim(0, y_max)
 
-fig.suptitle('Average Daily Precipitation and 7-Day Cumulative')
+fig.suptitle(f'Daily Precipitation and {num_days}-Day Cumulative')
 fig.tight_layout()
 st.pyplot(fig)
 
@@ -288,7 +297,7 @@ st.pyplot(fig)
 st.markdown("---")
 
 # --- Map Visualization ---
-st.subheader("🌐 Map of Your Location and Nearby Stations")
+st.subheader("Map of Your Location and Nearby Stations")
 map_data = pd.DataFrame({
     'lat': [user_lat] + stations['lat'].tolist(),
     'lon': [user_lon] + stations['lon'].tolist(),
@@ -312,3 +321,5 @@ st.pydeck_chart(pdk.Deck(
     initial_view_state=view_state,
     tooltip={"text": "{label}"}
 ))
+
+del num_days
