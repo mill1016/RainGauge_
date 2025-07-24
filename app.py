@@ -314,7 +314,7 @@ layer = pdk.Layer(
     pickable=True
 )
 
-view_state = pdk.ViewState(latitude=user_lat, longitude=user_lon, zoom=16, pitch=0)
+view_state = pdk.ViewState(latitude=user_lat, longitude=user_lon, zoom=10, pitch=0)
 
 st.pydeck_chart(pdk.Deck(
     layers=[layer],
