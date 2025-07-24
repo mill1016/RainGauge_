@@ -258,6 +258,9 @@ precip_df_full = get_precip_data(stations)
 precip_df = precip_df_full.tail(num_days).copy()
 precip_df['7-Day Cumulative'] = precip_df['Avg Precip [in]'].rolling(7, min_periods=1).sum()
 
+# 👇 Add this line to see the latest available date
+st.write("Most recent date in data:", precip_df_full['Date'].max())
+
 # --- Plot Precip Trends ---
 fig, ax1 = plt.subplots(figsize=(10, 6))
 ax1.bar(precip_df['Date'], precip_df['Avg Precip [in]'], color='skyblue', label='Daily Precipitation')
