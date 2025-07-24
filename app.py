@@ -204,7 +204,7 @@ def get_precip_data(stations):
     BASE_URL = "https://api.weather.com/v2/pws/history/all"
     API_KEY = "e1f10a1e78da46f5b10a1e78da96f525"
     end_date = date.today() - timedelta(days=1)
-    start_date = end_date - timedelta(days=29)  # ✅ Always 30 days
+    start_date = end_date - timedelta(days=6)  # ✅ Always 30 days
     records = []
 
     for day in pd.date_range(start_date, end_date):
